@@ -1,7 +1,7 @@
 import { format, isSameWeek, parseISO, startOfWeek } from 'date-fns';
 import { getIngredientsForDish } from './geminiService';
 import { mockDb } from './mockDb';
-import { Meal } from '../types';
+import { Meal, ShoppingItem } from '../types';
 
 const normalizeText = (value: string) =>
   value
@@ -26,6 +26,7 @@ const canonicalizeIngredient = (ingredient: string): { key: string; displayName:
 
 const isEnsaladaDeGarbanzos = (dishName: string): boolean => normalizeText(dishName).includes('ensalada de garbanzos');
 const isFajitas = (dishName: string): boolean => normalizeText(dishName).includes('fajita');
+const isTortillaDePatata = (dishName: string): boolean => normalizeText(dishName).includes('tortilla de patata');
 
 const getIngredientWeight = (dishName: string, ingredientKey: string): number => {
   const inGarbanzosSalad = isEnsaladaDeGarbanzos(dishName);
@@ -46,13 +47,18 @@ const getIngredientWeight = (dishName: string, ingredientKey: string): number =>
     return 0.5;
   }
 
+  if (ingredientKey === 'pan de fajita') {
+    return 2;
+  }
+
+  if (ingredientKey === 'huevos') {
+    return isTortillaDePatata(dishName) ? 5 : 2;
+  }
+
   return 1;
 };
 
-export const syncWeeklyShoppingAndInventory = async (userId: string, referenceDate: Date = new Date()) => {
-  const currentWeekStart = startOfWeek(referenceDate, { weekStartsOn: 1 });
-  const currentWeekKey = format(currentWeekStart, 'yyyy-MM-dd');
-
+const buildCurrentWeekRequirements = async (userId: string, referenceDate: Date) => {
   const allMeals = await mockDb.meals.list(userId);
   const currentWeekMeals = allMeals.filter((meal: Meal) =>
     isSameWeek(parseISO(meal.date), referenceDate, { weekStartsOn: 1 })
@@ -78,25 +84,23 @@ export const syncWeeklyShoppingAndInventory = async (userId: string, referenceDa
     });
   }
 
-  const [inventoryItems, shoppingItems] = await Promise.all([
-    mockDb.inventory.list(userId),
-    mockDb.shoppingItems.list(userId)
-  ]);
+  return { requiredCounts, requiredDisplayNames };
+};
 
-  const inventoryByNormalized: Record<string, { displayName: string; quantity: number | 'm' }> = {};
+const calculateDeficits = async (userId: string, requiredCounts: Record<string, number>) => {
+  const inventoryItems = await mockDb.inventory.list(userId);
+  const inventoryByNormalized: Record<string, number | 'm'> = {};
+
   inventoryItems.forEach((item) => {
     const canonical = canonicalizeIngredient(item.ingredient_name);
-    inventoryByNormalized[canonical.key] = {
-      displayName: canonical.displayName,
-      quantity: item.quantity
-    };
+    inventoryByNormalized[canonical.key] = item.quantity;
   });
 
   const deficits: Record<string, number> = {};
 
   for (const normalizedIngredient of Object.keys(requiredCounts)) {
     const required = requiredCounts[normalizedIngredient] || 0;
-    const inventoryQuantity = inventoryByNormalized[normalizedIngredient]?.quantity;
+    const inventoryQuantity = inventoryByNormalized[normalizedIngredient];
 
     const hasInfiniteInventory = inventoryQuantity === 'm';
     const currentInventory = typeof inventoryQuantity === 'number' ? inventoryQuantity : 0;
@@ -108,10 +112,54 @@ export const syncWeeklyShoppingAndInventory = async (userId: string, referenceDa
     }
   }
 
+  return deficits;
+};
+
+const buildAutoItemIndex = (shoppingItems: ShoppingItem[]) => {
   const autoItems = shoppingItems.filter((item) => !item.manual);
-  await Promise.all(autoItems.map((item) => mockDb.shoppingItems.delete(item.id)));
+  const byIngredientKey: Record<string, ShoppingItem[]> = {};
+
+  autoItems.forEach((item) => {
+    const ingredientKey = canonicalizeIngredient(item.ingredient_name).key;
+    if (!byIngredientKey[ingredientKey]) {
+      byIngredientKey[ingredientKey] = [];
+    }
+    byIngredientKey[ingredientKey].push(item);
+  });
+
+  return byIngredientKey;
+};
+
+export const syncCurrentWeekShoppingAndInventoryIncremental = async (
+  userId: string,
+  referenceDate: Date = new Date()
+) => {
+  const currentWeekStart = startOfWeek(referenceDate, { weekStartsOn: 1 });
+  const currentWeekKey = format(currentWeekStart, 'yyyy-MM-dd');
+
+  const { requiredCounts, requiredDisplayNames } = await buildCurrentWeekRequirements(userId, referenceDate);
+  const deficits = await calculateDeficits(userId, requiredCounts);
+  const shoppingItems = await mockDb.shoppingItems.list(userId);
+  const autoItemIndex = buildAutoItemIndex(shoppingItems);
+
+  for (const [ingredientKey, existingItems] of Object.entries(autoItemIndex)) {
+    if (existingItems.length > 1) {
+      await Promise.all(existingItems.slice(1).map((item) => mockDb.shoppingItems.delete(item.id)));
+      autoItemIndex[ingredientKey] = [existingItems[0]];
+    }
+  }
 
   for (const [normalizedIngredient, missingCount] of Object.entries(deficits)) {
+    const existing = autoItemIndex[normalizedIngredient]?.[0];
+
+    if (existing) {
+      await mockDb.shoppingItems.update(existing.id, {
+        ingredient_name: requiredDisplayNames[normalizedIngredient] || existing.ingredient_name,
+        required_quantity: missingCount
+      });
+      continue;
+    }
+
     await mockDb.shoppingItems.add({
       user_id: userId,
       ingredient_name: requiredDisplayNames[normalizedIngredient] || normalizedIngredient,
@@ -122,8 +170,25 @@ export const syncWeeklyShoppingAndInventory = async (userId: string, referenceDa
     });
   }
 
+  const deficitKeys = new Set(Object.keys(deficits));
+  const removals = Object.entries(autoItemIndex)
+    .filter(([ingredientKey]) => !deficitKeys.has(ingredientKey))
+    .flatMap(([, items]) => items.map((item) => mockDb.shoppingItems.delete(item.id)));
+
+  if (removals.length > 0) {
+    await Promise.all(removals);
+  }
+
   await mockDb.inventorySync.update(userId, {
     weekKey: currentWeekKey,
     consumed: {}
   });
+};
+
+export const syncWeeklyShoppingAndInventory = async (userId: string, referenceDate: Date = new Date()) => {
+  const shoppingItems = await mockDb.shoppingItems.list(userId);
+  const autoItems = shoppingItems.filter((item) => !item.manual);
+  await Promise.all(autoItems.map((item) => mockDb.shoppingItems.delete(item.id)));
+
+  await syncCurrentWeekShoppingAndInventoryIncremental(userId, referenceDate);
 };
