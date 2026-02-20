@@ -17,6 +17,10 @@ const normalizeIngredientLabel = (ingredient: string): string => {
     return 'Huevos';
   }
 
+  if (normalized.includes('patatas fritas')) {
+    return 'Patatas';
+  }
+
   return clean;
 };
 
