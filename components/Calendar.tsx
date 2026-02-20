@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Meal, MealType } from '../types';
 import { mockDb } from '../services/mockDb';
-import { syncWeeklyShoppingAndInventory } from '../services/planningSync';
+import { syncCurrentWeekShoppingAndInventoryIncremental, syncWeeklyShoppingAndInventory } from '../services/planningSync';
 import { format, addDays, startOfWeek, isSameDay, isSameWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Loader2, Plus, Trash2, CalendarRange, Pencil } from 'lucide-react';
@@ -23,9 +23,7 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
   const [weekOffset, setWeekOffset] = useState<0 | 1>(0);
 
   const currentWeekStart = useMemo(() => startOfWeek(now, { weekStartsOn: 1 }), [now]);
-  const syncInventoryAndShoppingForWeek = useCallback(async () => {
-    await syncWeeklyShoppingAndInventory(userId, now);
-  }, [now, userId]);
+  const currentWeekKey = useMemo(() => format(currentWeekStart, 'yyyy-MM-dd'), [currentWeekStart]);
 
   const loadMeals = useCallback(async () => {
     setLoading(true);
@@ -46,6 +44,26 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
     return () => window.clearInterval(interval);
   }, []);
 
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncWhenWeekChanges = async () => {
+      const syncState = await mockDb.inventorySync.get(userId);
+      const syncedWeekKey = syncState?.weekKey;
+
+      if (!cancelled && syncedWeekKey !== currentWeekKey) {
+        await syncWeeklyShoppingAndInventory(userId, now);
+      }
+    };
+
+    void syncWhenWeekChanges();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentWeekKey, now, userId]);
+
   const viewStartDate = addDays(currentWeekStart, weekOffset * 7);
   const days = Array.from({ length: 7 }, (_, i) => addDays(viewStartDate, i));
 
@@ -65,7 +83,9 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
       dish_name: dishName
     });
 
-    await syncInventoryAndShoppingForWeek();
+    if (isSameWeek(selectedDate, now, { weekStartsOn: 1 })) {
+      await syncCurrentWeekShoppingAndInventoryIncremental(userId, now);
+    }
 
     setDishName('');
     setEditingMealId(null);
@@ -80,7 +100,9 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
     if (window.confirm('¿Dejar este hueco vacío?')) {
       setAddingMeal(true);
       await mockDb.meals.delete(editingMealId);
-      await syncInventoryAndShoppingForWeek();
+      if (isSameWeek(selectedDate, now, { weekStartsOn: 1 })) {
+        await syncCurrentWeekShoppingAndInventoryIncremental(userId, now);
+      }
       setAddingMeal(false);
       setIsModalOpen(false);
       loadMeals();
