@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ShoppingItem } from '../types';
 import { mockDb } from '../services/mockDb';
+import { registerSuppressedAutoIngredient } from '../services/planningSync';
 import { Check, Plus, Trash2, ShoppingCart, Loader2, NotebookPen } from 'lucide-react';
 
 interface ShoppingListProps {
@@ -127,6 +128,10 @@ const ShoppingList: React.FC<ShoppingListProps> = ({ userId }) => {
     await Promise.all(group.ids.map((id) =>
       mockDb.shoppingItems.delete(id)
     ));
+
+    if (!group.manual) {
+      await registerSuppressedAutoIngredient(userId, group.name, group.requiredQuantity);
+    }
   };
 
   if (loading) return <div className="flex justify-center p-8"><Loader2 className="animate-spin text-orange-600" /></div>;
