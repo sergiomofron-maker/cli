@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Meal, MealType } from '../types';
 import { mockDb } from '../services/mockDb';
-import { applyMealAdded, applyMealDeleted, applyMealUpdated, syncWeeklyShoppingAndInventory } from '../services/planningSync';
-import { format, addDays, startOfWeek, isSameDay, isSameWeek, parseISO } from 'date-fns';
+import { syncWeeklyShoppingAndInventory } from '../services/planningSync';
+import { format, addDays, startOfWeek, isSameDay, isSameWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Loader2, Plus, Trash2, CalendarRange, Pencil } from 'lucide-react';
 
@@ -19,12 +19,11 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
   const [modalType, setModalType] = useState<MealType>(MealType.LUNCH);
   const [dishName, setDishName] = useState('');
   const [addingMeal, setAddingMeal] = useState(false);
+  const [generatingShoppingList, setGeneratingShoppingList] = useState(false);
   const [editingMealId, setEditingMealId] = useState<string | null>(null);
   const [weekOffset, setWeekOffset] = useState<0 | 1>(0);
 
   const currentWeekStart = useMemo(() => startOfWeek(now, { weekStartsOn: 1 }), [now]);
-  const currentWeekKey = useMemo(() => format(currentWeekStart, 'yyyy-MM-dd'), [currentWeekStart]);
-
   const loadMeals = useCallback(async () => {
     setLoading(true);
     const data = await mockDb.meals.list(userId);
@@ -45,25 +44,6 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
   }, []);
 
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const syncWhenWeekChanges = async () => {
-      const syncState = await mockDb.inventorySync.get(userId);
-      const syncedWeekKey = syncState?.weekKey;
-
-      if (!cancelled && syncedWeekKey !== currentWeekKey) {
-        await syncWeeklyShoppingAndInventory(userId, now);
-      }
-    };
-
-    void syncWhenWeekChanges();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentWeekKey, now, userId]);
-
   const viewStartDate = addDays(currentWeekStart, weekOffset * 7);
   const days = Array.from({ length: 7 }, (_, i) => addDays(viewStartDate, i));
 
@@ -71,35 +51,21 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
     if (!dishName.trim()) return;
     setAddingMeal(true);
 
-    const previousMeal = editingMealId ? meals.find((meal) => meal.id === editingMealId) || null : null;
     const dateStr = format(selectedDate, 'yyyy-MM-dd');
 
-    const nextMeal = editingMealId
-      ? await mockDb.meals.update(editingMealId, {
+    if (editingMealId) {
+      await mockDb.meals.update(editingMealId, {
           date: dateStr,
           meal_type: modalType,
           dish_name: dishName.trim()
-        })
-      : await mockDb.meals.add({
+        });
+    } else {
+      await mockDb.meals.add({
           user_id: userId,
           date: dateStr,
           meal_type: modalType,
           dish_name: dishName.trim()
         });
-
-    if (nextMeal) {
-      const previousMealInCurrentWeek = previousMeal
-        ? isSameWeek(parseISO(previousMeal.date), now, { weekStartsOn: 1 })
-        : false;
-      const nextMealInCurrentWeek = isSameWeek(parseISO(nextMeal.date), now, { weekStartsOn: 1 });
-
-      if (previousMeal && previousMealInCurrentWeek && nextMealInCurrentWeek) {
-        await applyMealUpdated(userId, previousMeal, nextMeal);
-      } else if (previousMeal && previousMealInCurrentWeek && !nextMealInCurrentWeek) {
-        await applyMealDeleted(userId, previousMeal);
-      } else if (nextMealInCurrentWeek) {
-        await applyMealAdded(userId, nextMeal);
-      }
     }
 
     setDishName('');
@@ -114,15 +80,19 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
 
     if (window.confirm('¿Dejar este hueco vacío?')) {
       setAddingMeal(true);
-      const mealToDelete = meals.find((meal) => meal.id === editingMealId) || null;
       await mockDb.meals.delete(editingMealId);
-
-      if (mealToDelete && isSameWeek(parseISO(mealToDelete.date), now, { weekStartsOn: 1 })) {
-        await applyMealDeleted(userId, mealToDelete);
-      }
       setAddingMeal(false);
       setIsModalOpen(false);
       loadMeals();
+    }
+  };
+
+  const handleGenerateShoppingList = async () => {
+    setGeneratingShoppingList(true);
+    try {
+      await syncWeeklyShoppingAndInventory(userId, now);
+    } finally {
+      setGeneratingShoppingList(false);
     }
   };
 
@@ -232,6 +202,19 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
         })}
       </div>
 
+      {weekOffset === 0 && (
+        <div className="px-4 mt-4">
+          <button
+            onClick={handleGenerateShoppingList}
+            disabled={generatingShoppingList}
+            className="w-full py-3 px-4 rounded-xl border border-orange-300 text-orange-700 font-semibold hover:bg-orange-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+          >
+            {generatingShoppingList && <Loader2 size={16} className="animate-spin mr-2" />}
+            Generar lista de la compra
+          </button>
+        </div>
+      )}
+
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-xl animate-in fade-in zoom-in duration-200">
@@ -252,7 +235,7 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
               />
               <p className="text-xs text-gray-500 mt-2">
                 {isSameWeek(selectedDate, now, { weekStartsOn: 1 })
-                  ? 'Se sincronizará con compra según inventario.'
+                  ? 'Se aplicará al generar la lista de la compra.'
                   : 'Semana futura: se calculará al llegar su semana.'}
               </p>
             </div>
