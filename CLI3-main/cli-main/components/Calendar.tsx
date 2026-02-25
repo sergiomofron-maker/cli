@@ -114,14 +114,17 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
   };
 
   const handleCookingRatioChange = (value: string) => {
-    const sanitizedValue = value.replace(/,/g, '.').trim();
-    const isValidFormat = /^$|^\d+(?:\.\d+)?$|^\d+\/\d+$/.test(sanitizedValue);
+    const normalizedValue = value.trim();
+    const isValidFormat =
+      normalizedValue === '' ||
+      /^\d+(?:[.,]\d*)?$/.test(normalizedValue) ||
+      /^\d+\/\d*(?:[.,]\d*)?$/.test(normalizedValue);
 
     if (!isValidFormat) return;
 
     setCookingRatios((prevRatios) => ({
       ...prevRatios,
-      [weekOffset]: sanitizedValue,
+      [weekOffset]: normalizedValue,
     }));
   };
 
@@ -162,7 +165,7 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
           <span className="text-sm font-semibold text-gray-700">Ratio cocina</span>
           <input
             type="text"
-            inputMode="decimal"
+            inputMode="text"
             value={cookingRatios[weekOffset]}
             onChange={(event) => handleCookingRatioChange(event.target.value)}
             placeholder="1, 1.5, 3/2"
