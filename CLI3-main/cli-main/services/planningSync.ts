@@ -32,6 +32,7 @@ const getWeekKey = (referenceDate: Date): string => {
 const isEnsaladaDeGarbanzos = (dishName: string): boolean => normalizeText(dishName).includes('ensalada de garbanzos');
 const isFajitas = (dishName: string): boolean => normalizeText(dishName).includes('fajita');
 const isTortillaDePatata = (dishName: string): boolean => normalizeText(dishName).includes('tortilla de patata');
+const isAlubiasDish = (dishName: string): boolean => normalizeText(dishName).includes('alubias');
 
 const getIngredientWeight = (dishName: string, ingredientKey: string): number => {
   const inGarbanzosSalad = isEnsaladaDeGarbanzos(dishName);
@@ -58,6 +59,10 @@ const getIngredientWeight = (dishName: string, ingredientKey: string): number =>
 
   if (ingredientKey === 'huevos') {
     return isTortillaDePatata(dishName) ? 5 : 2;
+  }
+
+  if (ingredientKey === 'zanahoria' && isAlubiasDish(dishName)) {
+    return 0.5;
   }
 
   if (ingredientKey === 'alubias') {

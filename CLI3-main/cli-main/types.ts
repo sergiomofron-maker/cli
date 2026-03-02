@@ -58,7 +58,7 @@ export const CRITICAL_DICTIONARY: Record<string, string[]> = {
   "Arroz": ["Arroz", "Tomate frito"],
   "Arroz con pollo": ["Arroz", "Pollo"],
   "Sopa": ["Sopa"],
-  "Alubias": ["Alubias"],
+  "Alubias": ["Alubias", "Zanahoria"],
   "Huevos": ["Huevos"],
   "Patatas": ["Patatas"]
 };
