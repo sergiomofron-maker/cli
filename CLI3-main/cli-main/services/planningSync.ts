@@ -60,6 +60,10 @@ const getIngredientWeight = (dishName: string, ingredientKey: string): number =>
     return isTortillaDePatata(dishName) ? 5 : 2;
   }
 
+  if (ingredientKey === 'alubias') {
+    return 0.5;
+  }
+
   return 1;
 };
 
