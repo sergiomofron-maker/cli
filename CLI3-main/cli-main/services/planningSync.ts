@@ -1,7 +1,7 @@
 import { format, isSameWeek, parseISO, startOfWeek } from 'date-fns';
 import { getIngredientsForDish } from './geminiService';
 import { mockDb } from './mockDb';
-import { Meal, ShoppingItem } from '../types';
+import { Meal, MealType, ShoppingItem } from '../types';
 
 const normalizeText = (value: string) =>
   value
@@ -15,6 +15,14 @@ const canonicalizeIngredient = (ingredient: string): { key: string; displayName:
 
   if (normalized.includes('pimiento')) {
     return { key: 'pimiento', displayName: 'Pimiento' };
+  }
+
+  if (normalized.includes('naranja')) {
+    return { key: 'naranja', displayName: 'Naranjas' };
+  }
+
+  if (normalized.includes('manzana')) {
+    return { key: 'manzana', displayName: 'Manzanas' };
   }
 
   const displayName = ingredient.trim();
@@ -32,6 +40,7 @@ const getWeekKey = (referenceDate: Date): string => {
 const isEnsaladaDeGarbanzos = (dishName: string): boolean => normalizeText(dishName).includes('ensalada de garbanzos');
 const isFajitas = (dishName: string): boolean => normalizeText(dishName).includes('fajita');
 const isTortillaDePatata = (dishName: string): boolean => normalizeText(dishName).includes('tortilla de patata');
+const isAlubiasDish = (dishName: string): boolean => normalizeText(dishName).includes('alubias');
 
 const getIngredientWeight = (dishName: string, ingredientKey: string): number => {
   const inGarbanzosSalad = isEnsaladaDeGarbanzos(dishName);
@@ -58,6 +67,10 @@ const getIngredientWeight = (dishName: string, ingredientKey: string): number =>
 
   if (ingredientKey === 'huevos') {
     return isTortillaDePatata(dishName) ? 5 : 2;
+  }
+
+  if (ingredientKey === 'zanahoria' && isAlubiasDish(dishName)) {
+    return 0.5;
   }
 
   if (ingredientKey === 'alubias') {
@@ -90,6 +103,18 @@ const getMealIngredientRequirements = async (meal: Meal): Promise<MealIngredient
       requiredDisplayNames[canonical.key] = canonical.displayName;
     }
   });
+
+  const hasFilledDish = meal.dish_name.trim().length > 0;
+
+  if (hasFilledDish && meal.meal_type === MealType.LUNCH) {
+    requiredCounts.naranja = (requiredCounts.naranja || 0) + 1;
+    requiredDisplayNames.naranja = 'Naranjas';
+  }
+
+  if (hasFilledDish && meal.meal_type === MealType.DINNER) {
+    requiredCounts.manzana = (requiredCounts.manzana || 0) + 1;
+    requiredDisplayNames.manzana = 'Manzanas';
+  }
 
   return { requiredCounts, requiredDisplayNames };
 };
