@@ -22,10 +22,6 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
   const [generatingShoppingList, setGeneratingShoppingList] = useState(false);
   const [editingMealId, setEditingMealId] = useState<string | null>(null);
   const [weekOffset, setWeekOffset] = useState<0 | 1>(0);
-  const [cookingRatios, setCookingRatios] = useState<Record<0 | 1, string>>({
-    0: '',
-    1: '',
-  });
 
   const currentWeekStart = useMemo(() => startOfWeek(now, { weekStartsOn: 1 }), [now]);
   const loadMeals = useCallback(async () => {
@@ -113,21 +109,6 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
     setIsModalOpen(true);
   };
 
-  const handleCookingRatioChange = (value: string) => {
-    const normalizedValue = value.trim();
-    const isValidFormat =
-      normalizedValue === '' ||
-      /^\d+(?:[.,]\d*)?$/.test(normalizedValue) ||
-      /^\d+\/\d*(?:[.,]\d*)?$/.test(normalizedValue);
-
-    if (!isValidFormat) return;
-
-    setCookingRatios((prevRatios) => ({
-      ...prevRatios,
-      [weekOffset]: normalizedValue,
-    }));
-  };
-
   if (loading) return <div className="flex justify-center p-8"><Loader2 className="animate-spin text-orange-600" /></div>;
 
   return (
@@ -160,20 +141,6 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
         </button>
       </div>
 
-      <div className="px-4 mb-4">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-3 flex items-center justify-between gap-3">
-          <span className="text-sm font-semibold text-gray-700">Ratio cocina</span>
-          <input
-            type="text"
-            inputMode="text"
-            value={cookingRatios[weekOffset]}
-            onChange={(event) => handleCookingRatioChange(event.target.value)}
-            placeholder="1, 1.5, 3/2"
-            aria-label={`Ratio cocina para ${weekOffset === 0 ? 'semana actual' : 'semana siguiente'}`}
-            className="w-28 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-800 focus:ring-2 focus:ring-orange-500 outline-none"
-          />
-        </div>
-      </div>
 
       <div className="space-y-4 px-4">
         {days.map((day) => {
