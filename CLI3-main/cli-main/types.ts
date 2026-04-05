@@ -17,6 +17,19 @@ export interface Meal {
   dish_name: string;
 }
 
+export interface WeeklyMealSnapshot {
+  date: string;
+  meal_type: MealType;
+  dish_name: string;
+}
+
+export interface WeeklyHistoryEntry {
+  week_key: string; // Monday YYYY-MM-DD
+  week_start: string; // Monday YYYY-MM-DD
+  captured_at: number;
+  meals: WeeklyMealSnapshot[];
+}
+
 export interface ShoppingItem {
   id: string;
   user_id: string;
