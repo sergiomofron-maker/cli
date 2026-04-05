@@ -1,4 +1,5 @@
-import { Meal, ShoppingAutoExclusion, ShoppingItem, User, InventoryItem } from "../types";
+import { addDays, addWeeks, differenceInCalendarWeeks, format, parseISO, startOfWeek } from "date-fns";
+import { InventoryItem, Meal, ShoppingAutoExclusion, ShoppingItem, User, WeeklyHistoryEntry, WeeklyMealSnapshot } from "../types";
 
 // Keys for localStorage
 const MEALS_KEY = 'planifia_meals';
@@ -8,6 +9,8 @@ const NOTES_KEY = 'planifia_shopping_notes';
 const INVENTORY_KEY = 'planifia_inventory';
 const INVENTORY_SYNC_KEY = 'planifia_inventory_sync';
 const SHOPPING_AUTO_EXCLUSIONS_KEY = 'planifia_shopping_auto_exclusions';
+const WEEK_HISTORY_KEY = 'planifia_week_history';
+const WEEK_HISTORY_META_KEY = 'planifia_week_history_meta';
 
 // Mock delay to simulate network
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -16,6 +19,33 @@ interface InventorySyncState {
   weekKey: string;
   consumed: Record<string, number>;
 }
+
+type WeeklyHistoryStore = Record<string, WeeklyHistoryEntry[]>;
+type WeeklyHistoryMetaStore = Record<string, { last_processed_week_key: string }>;
+
+const getWeekStartKey = (date: Date): string => format(startOfWeek(date, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+
+const getMealsForWeek = (allMeals: Meal[], userId: string, weekStartKey: string): WeeklyMealSnapshot[] => {
+  const start = parseISO(weekStartKey);
+  const end = addDays(start, 6);
+  return allMeals
+    .filter((meal) => {
+      if (meal.user_id !== userId) return false;
+      const mealDate = parseISO(meal.date);
+      return mealDate >= start && mealDate <= end;
+    })
+    .map((meal) => ({
+      date: meal.date,
+      meal_type: meal.meal_type,
+      dish_name: meal.dish_name
+    }));
+};
+
+const upsertHistoryEntry = (entries: WeeklyHistoryEntry[], entry: WeeklyHistoryEntry): WeeklyHistoryEntry[] => {
+  const withoutSameWeek = entries.filter((existing) => existing.week_key !== entry.week_key);
+  const merged = [entry, ...withoutSameWeek].sort((a, b) => b.week_start.localeCompare(a.week_start));
+  return merged.slice(0, 3);
+};
 
 export const mockDb = {
   auth: {
@@ -71,6 +101,108 @@ export const mockDb = {
       let all = JSON.parse(localStorage.getItem(MEALS_KEY) || '[]');
       all = all.filter((m: Meal) => m.id !== id);
       localStorage.setItem(MEALS_KEY, JSON.stringify(all));
+    }
+  },
+  weeklyHistory: {
+    list: async (userId: string) => {
+      await delay(100);
+      const all = JSON.parse(localStorage.getItem(WEEK_HISTORY_KEY) || '{}') as WeeklyHistoryStore;
+      return (all[userId] || []).sort((a, b) => b.week_start.localeCompare(a.week_start));
+    },
+    getByWeekKey: async (userId: string, weekKey: string) => {
+      await delay(50);
+      const all = JSON.parse(localStorage.getItem(WEEK_HISTORY_KEY) || '{}') as WeeklyHistoryStore;
+      const entries = all[userId] || [];
+      return entries.find((entry) => entry.week_key === weekKey) || null;
+    },
+    syncOnAppOpen: async (userId: string, now: Date = new Date()) => {
+      await delay(100);
+      const currentWeekKey = getWeekStartKey(now);
+      const currentWeekStart = parseISO(currentWeekKey);
+
+      const allMeals = JSON.parse(localStorage.getItem(MEALS_KEY) || '[]') as Meal[];
+      const historyStore = JSON.parse(localStorage.getItem(WEEK_HISTORY_KEY) || '{}') as WeeklyHistoryStore;
+      const metaStore = JSON.parse(localStorage.getItem(WEEK_HISTORY_META_KEY) || '{}') as WeeklyHistoryMetaStore;
+
+      let userHistory = historyStore[userId] || [];
+      const userMeta = metaStore[userId];
+
+      if (!userMeta) {
+        for (let i = 1; i <= 3; i += 1) {
+          const weekStart = addWeeks(currentWeekStart, -i);
+          const weekKey = format(weekStart, 'yyyy-MM-dd');
+          userHistory = upsertHistoryEntry(userHistory, {
+            week_key: weekKey,
+            week_start: weekKey,
+            captured_at: Date.now(),
+            meals: getMealsForWeek(allMeals, userId, weekKey)
+          });
+        }
+        historyStore[userId] = userHistory;
+        metaStore[userId] = { last_processed_week_key: currentWeekKey };
+        localStorage.setItem(WEEK_HISTORY_KEY, JSON.stringify(historyStore));
+        localStorage.setItem(WEEK_HISTORY_META_KEY, JSON.stringify(metaStore));
+        return userHistory;
+      }
+
+      const lastProcessedWeekStart = parseISO(userMeta.last_processed_week_key);
+      const movedWeeks = differenceInCalendarWeeks(currentWeekStart, lastProcessedWeekStart, { weekStartsOn: 1 });
+
+      if (movedWeeks <= 0) {
+        return userHistory.sort((a, b) => b.week_start.localeCompare(a.week_start));
+      }
+
+      for (let step = 0; step < movedWeeks; step += 1) {
+        const completedWeekStart = addWeeks(lastProcessedWeekStart, step);
+        const completedWeekKey = format(completedWeekStart, 'yyyy-MM-dd');
+        userHistory = upsertHistoryEntry(userHistory, {
+          week_key: completedWeekKey,
+          week_start: completedWeekKey,
+          captured_at: Date.now(),
+          meals: getMealsForWeek(allMeals, userId, completedWeekKey)
+        });
+      }
+
+      historyStore[userId] = userHistory;
+      metaStore[userId] = { last_processed_week_key: currentWeekKey };
+      localStorage.setItem(WEEK_HISTORY_KEY, JSON.stringify(historyStore));
+      localStorage.setItem(WEEK_HISTORY_META_KEY, JSON.stringify(metaStore));
+      return userHistory;
+    },
+    repeatIntoNextWeek: async (userId: string, historyWeekKey: string, now: Date = new Date()) => {
+      await delay(120);
+      const historyStore = JSON.parse(localStorage.getItem(WEEK_HISTORY_KEY) || '{}') as WeeklyHistoryStore;
+      const entry = (historyStore[userId] || []).find((candidate) => candidate.week_key === historyWeekKey);
+      if (!entry) {
+        return false;
+      }
+
+      const sourceStart = parseISO(entry.week_start);
+      const targetWeekStart = addWeeks(startOfWeek(now, { weekStartsOn: 1 }), 1);
+      const targetWeekKey = format(targetWeekStart, 'yyyy-MM-dd');
+      const targetWeekEnd = addDays(targetWeekStart, 6);
+
+      const allMeals = JSON.parse(localStorage.getItem(MEALS_KEY) || '[]') as Meal[];
+      const preservedMeals = allMeals.filter((meal) => {
+        if (meal.user_id !== userId) return true;
+        const mealDate = parseISO(meal.date);
+        return mealDate < targetWeekStart || mealDate > targetWeekEnd;
+      });
+
+      const repeatedMeals: Meal[] = entry.meals.map((snapshot) => {
+        const sourceDate = parseISO(snapshot.date);
+        const shiftedDays = Math.round((sourceDate.getTime() - sourceStart.getTime()) / (1000 * 60 * 60 * 24));
+        return {
+          id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          user_id: userId,
+          date: format(addDays(targetWeekStart, shiftedDays), 'yyyy-MM-dd'),
+          meal_type: snapshot.meal_type,
+          dish_name: snapshot.dish_name
+        };
+      });
+
+      localStorage.setItem(MEALS_KEY, JSON.stringify([...preservedMeals, ...repeatedMeals]));
+      return { targetWeekKey, mealsInserted: repeatedMeals.length };
     }
   },
   shoppingNotes: {
