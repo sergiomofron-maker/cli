@@ -41,10 +41,34 @@ const getMealsForWeek = (allMeals: Meal[], userId: string, weekStartKey: string)
     }));
 };
 
+const sortHistoryEntries = (entries: WeeklyHistoryEntry[]): WeeklyHistoryEntry[] => entries
+  .sort((a, b) => {
+    if (!!a.pinned !== !!b.pinned) {
+      return a.pinned ? -1 : 1;
+    }
+
+    return b.week_start.localeCompare(a.week_start);
+  });
+
+const trimHistoryEntries = (entries: WeeklyHistoryEntry[]): WeeklyHistoryEntry[] => {
+  const pinnedEntries = entries.filter((entry) => entry.pinned);
+  const unpinnedEntries = entries
+    .filter((entry) => !entry.pinned)
+    .sort((a, b) => b.week_start.localeCompare(a.week_start))
+    .slice(0, 3);
+
+  return sortHistoryEntries([...pinnedEntries, ...unpinnedEntries]);
+};
+
 const upsertHistoryEntry = (entries: WeeklyHistoryEntry[], entry: WeeklyHistoryEntry): WeeklyHistoryEntry[] => {
+  const currentEntry = entries.find((existing) => existing.week_key === entry.week_key);
   const withoutSameWeek = entries.filter((existing) => existing.week_key !== entry.week_key);
-  const merged = [entry, ...withoutSameWeek].sort((a, b) => b.week_start.localeCompare(a.week_start));
-  return merged.slice(0, 3);
+  const mergedEntry: WeeklyHistoryEntry = {
+    ...entry,
+    pinned: currentEntry?.pinned ?? entry.pinned ?? false
+  };
+
+  return trimHistoryEntries([mergedEntry, ...withoutSameWeek]);
 };
 
 export const mockDb = {
@@ -107,7 +131,7 @@ export const mockDb = {
     list: async (userId: string) => {
       await delay(100);
       const all = JSON.parse(localStorage.getItem(WEEK_HISTORY_KEY) || '{}') as WeeklyHistoryStore;
-      return (all[userId] || []).sort((a, b) => b.week_start.localeCompare(a.week_start));
+      return sortHistoryEntries(all[userId] || []);
     },
     getByWeekKey: async (userId: string, weekKey: string) => {
       await delay(50);
@@ -149,7 +173,7 @@ export const mockDb = {
       const movedWeeks = differenceInCalendarWeeks(currentWeekStart, lastProcessedWeekStart, { weekStartsOn: 1 });
 
       if (movedWeeks <= 0) {
-        return userHistory.sort((a, b) => b.week_start.localeCompare(a.week_start));
+        return sortHistoryEntries(userHistory);
       }
 
       for (let step = 0; step < movedWeeks; step += 1) {
@@ -167,7 +191,23 @@ export const mockDb = {
       metaStore[userId] = { last_processed_week_key: currentWeekKey };
       localStorage.setItem(WEEK_HISTORY_KEY, JSON.stringify(historyStore));
       localStorage.setItem(WEEK_HISTORY_META_KEY, JSON.stringify(metaStore));
-      return userHistory;
+      return sortHistoryEntries(userHistory);
+    },
+    togglePin: async (userId: string, weekKey: string, pinned: boolean) => {
+      await delay(80);
+      const historyStore = JSON.parse(localStorage.getItem(WEEK_HISTORY_KEY) || '{}') as WeeklyHistoryStore;
+      const userHistory = historyStore[userId] || [];
+      const index = userHistory.findIndex((entry) => entry.week_key === weekKey);
+
+      if (index === -1) {
+        return null;
+      }
+
+      userHistory[index] = { ...userHistory[index], pinned };
+      const normalizedHistory = trimHistoryEntries(userHistory);
+      historyStore[userId] = normalizedHistory;
+      localStorage.setItem(WEEK_HISTORY_KEY, JSON.stringify(historyStore));
+      return normalizedHistory.find((entry) => entry.week_key === weekKey) || null;
     },
     repeatIntoNextWeek: async (userId: string, historyWeekKey: string, now: Date = new Date()) => {
       await delay(120);
