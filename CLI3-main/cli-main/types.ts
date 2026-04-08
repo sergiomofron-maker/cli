@@ -28,7 +28,9 @@ export interface WeeklyHistoryEntry {
   week_start: string; // Monday YYYY-MM-DD
   captured_at: number;
   meals: WeeklyMealSnapshot[];
+  pinned?: boolean;
 }
+
 
 export interface ShoppingItem {
   id: string;

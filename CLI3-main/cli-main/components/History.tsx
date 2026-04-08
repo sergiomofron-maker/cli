@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { addDays, format, parseISO } from 'date-fns';
+import { addDays, differenceInCalendarWeeks, format, parseISO, startOfWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { History as HistoryIcon, Loader2, RotateCcw, ChevronLeft } from 'lucide-react';
+import { History as HistoryIcon, Loader2, RotateCcw, ChevronLeft, Pin, PinOff } from 'lucide-react';
 import { mockDb } from '../services/mockDb';
 import { MealType, WeeklyHistoryEntry } from '../types';
 
@@ -64,6 +64,25 @@ const History: React.FC<HistoryProps> = ({ userId }) => {
     await mockDb.weeklyHistory.repeatIntoNextWeek(userId, weekKey, new Date());
     setRepeating(null);
     window.alert('Semana copiada en el calendario de la semana siguiente.');
+  };
+
+  const handleTogglePin = async (entry: WeeklyHistoryEntry) => {
+    const isUnpinning = entry.pinned;
+
+    if (isUnpinning) {
+      const currentWeekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+      const entryWeekStart = parseISO(entry.week_start);
+      const weeksElapsed = differenceInCalendarWeeks(currentWeekStart, entryWeekStart, { weekStartsOn: 1 });
+      if (weeksElapsed > 3) {
+        const shouldContinue = window.confirm('Al desfijar esta semana, su información se borrará del historial porque tiene más de 3 semanas. ¿Quieres continuar?');
+        if (!shouldContinue) {
+          return;
+        }
+      }
+    }
+
+    await mockDb.weeklyHistory.togglePin(userId, entry.week_key, !entry.pinned);
+    await loadHistory();
   };
 
   if (loading) {
@@ -154,17 +173,34 @@ const History: React.FC<HistoryProps> = ({ userId }) => {
                 </div>
               </div>
 
-              <button
-                onClick={(event) => {
-                  event.stopPropagation();
-                  handleRepeat(entry.week_key);
-                }}
-                disabled={repeating === entry.week_key}
-                className="inline-flex items-center justify-center rounded-lg border border-orange-300 text-orange-700 hover:bg-orange-50 p-2 disabled:opacity-60"
-                title="Repetir en semana siguiente"
-              >
-                {repeating === entry.week_key ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />}
-              </button>
+              <div className="flex flex-col items-end gap-2">
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleTogglePin(entry);
+                  }}
+                  className={`inline-flex items-center justify-center rounded-lg border p-2 ${
+                    entry.pinned
+                      ? 'border-orange-500 text-orange-600 bg-orange-50 hover:bg-orange-100'
+                      : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                  }`}
+                  title={entry.pinned ? 'Desfijar semana' : 'Fijar semana'}
+                >
+                  {entry.pinned ? <PinOff size={16} /> : <Pin size={16} />}
+                </button>
+
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleRepeat(entry.week_key);
+                  }}
+                  disabled={repeating === entry.week_key}
+                  className="mt-1 inline-flex items-center justify-center rounded-lg border border-orange-300 text-orange-700 hover:bg-orange-50 p-2 disabled:opacity-60"
+                  title="Repetir en semana siguiente"
+                >
+                  {repeating === entry.week_key ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />}
+                </button>
+              </div>
             </div>
           </div>
         ))}
