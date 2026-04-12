@@ -11,12 +11,11 @@ interface HistoryProps {
 
 const DAY_LABELS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
-const getRelativeLabel = (weekStart: string): string => {
-  const currentWeekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-  const targetWeekStart = parseISO(weekStart);
-  const diff = differenceInCalendarWeeks(currentWeekStart, targetWeekStart, { weekStartsOn: 1 });
-  const normalizedDiff = Math.max(1, diff);
-  return `Hace ${normalizedDiff} semana${normalizedDiff === 1 ? '' : 's'}`;
+const getRelativeLabel = (index: number): string => {
+  if (index < 0) return 'Hace 1 semana';
+  if (index === 0) return 'Hace 1 semana';
+  if (index === 1) return 'Hace 2 semanas';
+  return 'Hace 3 semanas';
 };
 
 const History: React.FC<HistoryProps> = ({ userId }) => {
@@ -24,7 +23,6 @@ const History: React.FC<HistoryProps> = ({ userId }) => {
   const [loading, setLoading] = useState(true);
   const [selectedWeekKey, setSelectedWeekKey] = useState<string | null>(null);
   const [repeating, setRepeating] = useState<string | null>(null);
-  const [pinning, setPinning] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
     setLoading(true);
@@ -69,28 +67,22 @@ const History: React.FC<HistoryProps> = ({ userId }) => {
   };
 
   const handleTogglePin = async (entry: WeeklyHistoryEntry) => {
-    if (pinning) return;
-    if (entry.pinned) {
-      const shouldWarn = await mockDb.weeklyHistory.shouldWarnBeforeUnpin(userId, entry.week_key, new Date());
-      if (shouldWarn) {
-        const confirmUnpin = window.confirm(
-          'Esta semana tiene más de 3 semanas. Si la desfijas, se borrará del historial. ¿Quieres continuar?'
-        );
-        if (!confirmUnpin) return;
+    const isUnpinning = entry.pinned;
+
+    if (isUnpinning) {
+      const currentWeekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+      const entryWeekStart = parseISO(entry.week_start);
+      const weeksElapsed = differenceInCalendarWeeks(currentWeekStart, entryWeekStart, { weekStartsOn: 1 });
+      if (weeksElapsed > 3) {
+        const shouldContinue = window.confirm('Al desfijar esta semana, su información se borrará del historial porque tiene más de 3 semanas. ¿Quieres continuar?');
+        if (!shouldContinue) {
+          return;
+        }
       }
     }
 
-    setPinning(entry.week_key);
-    const result = await mockDb.weeklyHistory.setPinned(userId, entry.week_key, !entry.pinned);
-    setPinning(null);
+    await mockDb.weeklyHistory.togglePin(userId, entry.week_key, !entry.pinned);
     await loadHistory();
-
-    if (result.removed) {
-      if (selectedWeekKey === entry.week_key) {
-        setSelectedWeekKey(null);
-      }
-      window.alert('La semana se ha borrado del historial al desfijarla.');
-    }
   };
 
   if (loading) {
@@ -125,7 +117,7 @@ const History: React.FC<HistoryProps> = ({ userId }) => {
 
         <h2 className="text-xl font-bold mb-4 px-4 flex items-center gap-2">
           <HistoryIcon size={24} className="text-orange-600" />
-          {getRelativeLabel(selectedEntry.week_start)}
+          {getRelativeLabel(entries.findIndex((entry) => entry.week_key === selectedEntry.week_key))}
         </h2>
 
         <div className="space-y-3 px-4">
@@ -159,7 +151,7 @@ const History: React.FC<HistoryProps> = ({ userId }) => {
       </h2>
 
       <div className="space-y-3 px-4">
-        {entries.map((entry) => (
+        {entries.map((entry, index) => (
           <div
             key={entry.week_key}
             onClick={() => setSelectedWeekKey(entry.week_key)}
@@ -175,29 +167,26 @@ const History: React.FC<HistoryProps> = ({ userId }) => {
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="font-semibold text-gray-900">{getRelativeLabel(entry.week_start)}</div>
+                <div className="font-semibold text-gray-900">{getRelativeLabel(index)}</div>
                 <div className="text-sm text-gray-500 mt-1">
                   {format(parseISO(entry.week_start), "d MMM", { locale: es })} - {format(addDays(parseISO(entry.week_start), 6), 'd MMM', { locale: es })}
                 </div>
               </div>
 
-              <div className="flex flex-col items-end">
+              <div className="flex flex-col items-end gap-2">
                 <button
                   onClick={(event) => {
                     event.stopPropagation();
                     handleTogglePin(entry);
                   }}
-                  disabled={pinning === entry.week_key}
-                  className="inline-flex items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 p-2 disabled:opacity-60"
+                  className={`inline-flex items-center justify-center rounded-lg border p-2 ${
+                    entry.pinned
+                      ? 'border-orange-500 text-orange-600 bg-orange-50 hover:bg-orange-100'
+                      : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                  }`}
                   title={entry.pinned ? 'Desfijar semana' : 'Fijar semana'}
                 >
-                  {pinning === entry.week_key ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : entry.pinned ? (
-                    <PinOff size={16} />
-                  ) : (
-                    <Pin size={16} />
-                  )}
+                  {entry.pinned ? <PinOff size={16} /> : <Pin size={16} />}
                 </button>
 
                 <button
@@ -206,7 +195,7 @@ const History: React.FC<HistoryProps> = ({ userId }) => {
                     handleRepeat(entry.week_key);
                   }}
                   disabled={repeating === entry.week_key}
-                  className="inline-flex items-center justify-center rounded-lg border border-orange-300 text-orange-700 hover:bg-orange-50 p-2 disabled:opacity-60 mt-2"
+                  className="mt-1 inline-flex items-center justify-center rounded-lg border border-orange-300 text-orange-700 hover:bg-orange-50 p-2 disabled:opacity-60"
                   title="Repetir en semana siguiente"
                 >
                   {repeating === entry.week_key ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />}
