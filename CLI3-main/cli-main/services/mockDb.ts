@@ -41,14 +41,14 @@ const getMealsForWeek = (allMeals: Meal[], userId: string, weekStartKey: string)
     }));
 };
 
-const sortHistoryEntries = (entries: WeeklyHistoryEntry[]): WeeklyHistoryEntry[] => entries
-  .sort((a, b) => {
-    if (!!a.pinned !== !!b.pinned) {
+const sortHistoryEntries = (entries: WeeklyHistoryEntry[]): WeeklyHistoryEntry[] => {
+  return [...entries].sort((a, b) => {
+    if (a.pinned !== b.pinned) {
       return a.pinned ? -1 : 1;
     }
-
     return b.week_start.localeCompare(a.week_start);
   });
+};
 
 const trimHistoryEntries = (entries: WeeklyHistoryEntry[]): WeeklyHistoryEntry[] => {
   const pinnedEntries = entries.filter((entry) => entry.pinned);
@@ -61,14 +61,14 @@ const trimHistoryEntries = (entries: WeeklyHistoryEntry[]): WeeklyHistoryEntry[]
 };
 
 const upsertHistoryEntry = (entries: WeeklyHistoryEntry[], entry: WeeklyHistoryEntry): WeeklyHistoryEntry[] => {
-  const currentEntry = entries.find((existing) => existing.week_key === entry.week_key);
-  const withoutSameWeek = entries.filter((existing) => existing.week_key !== entry.week_key);
-  const mergedEntry: WeeklyHistoryEntry = {
+  const existing = entries.find((candidate) => candidate.week_key === entry.week_key);
+  const normalizedEntry: WeeklyHistoryEntry = {
     ...entry,
-    pinned: currentEntry?.pinned ?? entry.pinned ?? false
+    pinned: existing?.pinned ?? entry.pinned ?? false,
+    pinned_at: existing?.pinned_at ?? entry.pinned_at
   };
-
-  return trimHistoryEntries([mergedEntry, ...withoutSameWeek]);
+  const withoutSameWeek = entries.filter((candidate) => candidate.week_key !== entry.week_key);
+  return trimHistoryEntries([normalizedEntry, ...withoutSameWeek]);
 };
 
 export const mockDb = {
@@ -159,6 +159,7 @@ export const mockDb = {
             week_key: weekKey,
             week_start: weekKey,
             captured_at: Date.now(),
+            pinned: false,
             meals: getMealsForWeek(allMeals, userId, weekKey)
           });
         }
@@ -173,7 +174,7 @@ export const mockDb = {
       const movedWeeks = differenceInCalendarWeeks(currentWeekStart, lastProcessedWeekStart, { weekStartsOn: 1 });
 
       if (movedWeeks <= 0) {
-        return sortHistoryEntries(userHistory);
+        return userHistory.sort((a, b) => b.week_start.localeCompare(a.week_start));
       }
 
       for (let step = 0; step < movedWeeks; step += 1) {
@@ -183,6 +184,7 @@ export const mockDb = {
           week_key: completedWeekKey,
           week_start: completedWeekKey,
           captured_at: Date.now(),
+          pinned: false,
           meals: getMealsForWeek(allMeals, userId, completedWeekKey)
         });
       }
@@ -191,23 +193,52 @@ export const mockDb = {
       metaStore[userId] = { last_processed_week_key: currentWeekKey };
       localStorage.setItem(WEEK_HISTORY_KEY, JSON.stringify(historyStore));
       localStorage.setItem(WEEK_HISTORY_META_KEY, JSON.stringify(metaStore));
-      return sortHistoryEntries(userHistory);
+      return userHistory;
     },
-    togglePin: async (userId: string, weekKey: string, pinned: boolean) => {
-      await delay(80);
-      const historyStore = JSON.parse(localStorage.getItem(WEEK_HISTORY_KEY) || '{}') as WeeklyHistoryStore;
-      const userHistory = historyStore[userId] || [];
-      const index = userHistory.findIndex((entry) => entry.week_key === weekKey);
-
-      if (index === -1) {
-        return null;
+    shouldWarnBeforeUnpin: async (userId: string, weekKey: string, now: Date = new Date()) => {
+      await delay(50);
+      const all = JSON.parse(localStorage.getItem(WEEK_HISTORY_KEY) || '{}') as WeeklyHistoryStore;
+      const entry = (all[userId] || []).find((candidate) => candidate.week_key === weekKey);
+      if (!entry?.pinned) {
+        return false;
       }
 
-      userHistory[index] = { ...userHistory[index], pinned };
-      const normalizedHistory = trimHistoryEntries(userHistory);
-      historyStore[userId] = normalizedHistory;
-      localStorage.setItem(WEEK_HISTORY_KEY, JSON.stringify(historyStore));
-      return normalizedHistory.find((entry) => entry.week_key === weekKey) || null;
+      const currentWeekStart = startOfWeek(now, { weekStartsOn: 1 });
+      const entryWeekStart = parseISO(entry.week_start);
+      const elapsedWeeks = differenceInCalendarWeeks(currentWeekStart, entryWeekStart, { weekStartsOn: 1 });
+      return elapsedWeeks > 3;
+    },
+    setPinned: async (userId: string, weekKey: string, pinned: boolean) => {
+      await delay(80);
+      const all = JSON.parse(localStorage.getItem(WEEK_HISTORY_KEY) || '{}') as WeeklyHistoryStore;
+      const entries = all[userId] || [];
+      const index = entries.findIndex((entry) => entry.week_key === weekKey);
+
+      if (index === -1) {
+        return { updated: false, removed: false };
+      }
+
+      const updatedEntries = [...entries];
+      if (pinned) {
+        updatedEntries[index] = {
+          ...updatedEntries[index],
+          pinned: true,
+          pinned_at: Date.now()
+        };
+      } else {
+        updatedEntries[index] = {
+          ...updatedEntries[index],
+          pinned: false,
+          pinned_at: undefined
+        };
+      }
+
+      const trimmedEntries = trimHistoryEntries(updatedEntries);
+      const removed = !trimmedEntries.some((entry) => entry.week_key === weekKey);
+
+      all[userId] = trimmedEntries;
+      localStorage.setItem(WEEK_HISTORY_KEY, JSON.stringify(all));
+      return { updated: !removed, removed };
     },
     repeatIntoNextWeek: async (userId: string, historyWeekKey: string, now: Date = new Date()) => {
       await delay(120);

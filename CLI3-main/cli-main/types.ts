@@ -27,10 +27,10 @@ export interface WeeklyHistoryEntry {
   week_key: string; // Monday YYYY-MM-DD
   week_start: string; // Monday YYYY-MM-DD
   captured_at: number;
+  pinned: boolean;
+  pinned_at?: number;
   meals: WeeklyMealSnapshot[];
-  pinned?: boolean;
 }
-
 
 export interface ShoppingItem {
   id: string;
