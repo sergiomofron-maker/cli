@@ -19,7 +19,7 @@ const Layout: React.FC<LayoutProps> = ({ activeTab, setActiveTab, onLogout, chil
     <div className="min-h-screen bg-gray-50 max-w-md mx-auto shadow-2xl relative">
       <header className="bg-white px-4 py-3 border-b flex justify-between items-center sticky top-0 z-10">
         <h1 className="text-lg font-bold text-orange-600 flex items-center gap-2">
-          📋 CyL
+          📋 CLI
         </h1>
         <button onClick={handleLogout} className="text-gray-400 hover:text-gray-600">
           <LogOut size={20} />
