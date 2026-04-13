@@ -50,7 +50,7 @@ export const getIngredientsForDish = async (dishName: string): Promise<{ ingredi
   }
 
   // PRIORITY 2: Split by conjunctions -> Match against Dictionary (Smart) -> Fallback to Input Name
-  const separators = [" con ", " y ", " and ", ",", " w/ ", " \\+ "];
+  const separators = [" con ", " y ", " and ", ",", " w/ ", " \\+ ", " "];
   // Regex to split by separators, case insensitive
   const regex = new RegExp(separators.join('|'), 'i');
   

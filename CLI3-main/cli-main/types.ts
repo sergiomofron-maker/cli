@@ -67,7 +67,7 @@ export const CRITICAL_DICTIONARY: Record<string, string[]> = {
   "Tortilla de patata": ["Huevos", "Patatas", "Cebolla"],
   "Pizza casera": ["Masa de pizza", "Tomate frito", "Queso"],
   "Pizza": ["Pizza"],
-  "Pizza roll": ["Pan de fajita", "Tomate frito", "Queso rallado", "Jamón york"],
+  "Pizza roll": ["Pan de fajita", "Tomate frito", "Jamón york"],
   "Macarrones": ["Macarrones", "Tomate frito"],
   "Macarrones con pesto": ["Macarrones", "Pesto"],
   "Arroz": ["Arroz", "Tomate frito"],
