@@ -2,7 +2,11 @@
 module.exports = {
   content: ['./index.html', './App.tsx', './components/**/*.{ts,tsx}'],
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+        sans: ['Aptos', 'Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
+      },
+    },
   },
   plugins: [],
 };
