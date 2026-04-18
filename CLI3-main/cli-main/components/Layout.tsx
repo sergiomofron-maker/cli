@@ -1,10 +1,10 @@
 import React from 'react';
-import { Calendar as CalendarIcon, ShoppingCart, LogOut, Archive } from 'lucide-react';
+import { Calendar as CalendarIcon, ShoppingCart, LogOut, Archive, History } from 'lucide-react';
 import { mockDb } from '../services/mockDb';
 
 interface LayoutProps {
-  activeTab: 'calendar' | 'shopping' | 'inventory';
-  setActiveTab: (tab: 'calendar' | 'shopping' | 'inventory') => void;
+  activeTab: 'calendar' | 'shopping' | 'inventory' | 'history';
+  setActiveTab: (tab: 'calendar' | 'shopping' | 'inventory' | 'history') => void;
   onLogout: () => void;
   children: React.ReactNode;
 }
@@ -19,7 +19,7 @@ const Layout: React.FC<LayoutProps> = ({ activeTab, setActiveTab, onLogout, chil
     <div className="min-h-screen bg-gray-50 max-w-md mx-auto shadow-2xl relative">
       <header className="bg-white px-4 py-3 border-b flex justify-between items-center sticky top-0 z-10">
         <h1 className="text-lg font-bold text-orange-600 flex items-center gap-2">
-          📋 CyL
+          📋 CLI
         </h1>
         <button onClick={handleLogout} className="text-gray-400 hover:text-gray-600">
           <LogOut size={20} />
@@ -31,7 +31,7 @@ const Layout: React.FC<LayoutProps> = ({ activeTab, setActiveTab, onLogout, chil
       <nav className="fixed bottom-0 w-full max-w-md bg-white border-t border-gray-200 flex justify-around py-3 pb-safe z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
         <button
           onClick={() => setActiveTab('calendar')}
-          className={`flex flex-col items-center gap-1 w-1/3 ${
+          className={`flex flex-col items-center gap-1 w-1/4 ${
             activeTab === 'calendar' ? 'text-orange-600' : 'text-gray-400 hover:text-gray-600'
           }`}
         >
@@ -41,7 +41,7 @@ const Layout: React.FC<LayoutProps> = ({ activeTab, setActiveTab, onLogout, chil
 
         <button
           onClick={() => setActiveTab('shopping')}
-          className={`flex flex-col items-center gap-1 w-1/3 ${
+          className={`flex flex-col items-center gap-1 w-1/4 ${
             activeTab === 'shopping' ? 'text-orange-600' : 'text-gray-400 hover:text-gray-600'
           }`}
         >
@@ -51,12 +51,22 @@ const Layout: React.FC<LayoutProps> = ({ activeTab, setActiveTab, onLogout, chil
 
         <button
           onClick={() => setActiveTab('inventory')}
-          className={`flex flex-col items-center gap-1 w-1/3 ${
+          className={`flex flex-col items-center gap-1 w-1/4 ${
             activeTab === 'inventory' ? 'text-orange-600' : 'text-gray-400 hover:text-gray-600'
           }`}
         >
           <Archive size={22} strokeWidth={activeTab === 'inventory' ? 2.5 : 2} />
           <span className="text-xs font-medium">Inventario</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('history')}
+          className={`flex flex-col items-center gap-1 w-1/4 ${
+            activeTab === 'history' ? 'text-orange-600' : 'text-gray-400 hover:text-gray-600'
+          }`}
+        >
+          <History size={22} strokeWidth={activeTab === 'history' ? 2.5 : 2} />
+          <span className="text-xs font-medium">Historial</span>
         </button>
       </nav>
     </div>

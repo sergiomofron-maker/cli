@@ -17,6 +17,21 @@ export interface Meal {
   dish_name: string;
 }
 
+export interface WeeklyMealSnapshot {
+  date: string;
+  meal_type: MealType;
+  dish_name: string;
+}
+
+export interface WeeklyHistoryEntry {
+  week_key: string; // Monday YYYY-MM-DD
+  week_start: string; // Monday YYYY-MM-DD
+  captured_at: number;
+  pinned: boolean;
+  pinned_at?: number;
+  meals: WeeklyMealSnapshot[];
+}
+
 export interface ShoppingItem {
   id: string;
   user_id: string;
@@ -52,13 +67,13 @@ export const CRITICAL_DICTIONARY: Record<string, string[]> = {
   "Tortilla de patata": ["Huevos", "Patatas", "Cebolla"],
   "Pizza casera": ["Masa de pizza", "Tomate frito", "Queso"],
   "Pizza": ["Pizza"],
-  "Pizza roll": ["Pan de fajita", "Tomate frito", "Queso rallado", "Jamón york"],
+  "Pizza roll": ["Pan de fajita", "Tomate frito", "Jamón york"],
   "Macarrones": ["Macarrones", "Tomate frito"],
   "Macarrones con pesto": ["Macarrones", "Pesto"],
   "Arroz": ["Arroz", "Tomate frito"],
   "Arroz con pollo": ["Arroz", "Pollo"],
   "Sopa": ["Sopa"],
-  "Alubias": ["Alubias"],
+  "Alubias": ["Alubias", "Zanahoria"],
   "Huevos": ["Huevos"],
   "Patatas": ["Patatas"]
 };
