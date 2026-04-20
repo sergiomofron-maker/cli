@@ -50,8 +50,9 @@ export const getIngredientsForDish = async (dishName: string): Promise<{ ingredi
   }
 
   // PRIORITY 2: Split by conjunctions -> Match against Dictionary (Smart) -> Fallback to Input Name
-  const separators = [" con ", " y ", " and ", ",", " w/ ", " \\+ ", " "];
-  // Regex to split by separators, case insensitive
+  // Never split by plain space to avoid fragmenting multi-word ingredients (e.g., "Queso Cottage").
+  const separators = [" con ", " y ", " and ", ",", " w/ ", " \\+ "];
+  // Regex to split by semantic separators only, case insensitive
   const regex = new RegExp(separators.join('|'), 'i');
   
   const parts = dishName.split(regex).map(p => p.trim()).filter(p => p.length > 0);
