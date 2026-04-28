@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ShoppingItem } from '../types';
 import { mockDb } from '../services/mockDb';
-import { Check, Plus, Trash2, ShoppingCart, Loader2, NotebookPen } from 'lucide-react';
+import { GripHorizontal, Plus, Trash2, ShoppingCart, Loader2, NotebookPen } from 'lucide-react';
 import { format, startOfWeek } from 'date-fns';
 
 interface ShoppingListProps {
@@ -12,9 +12,9 @@ interface GroupedItem {
   name: string;
   ingredientKey: string;
   ids: string[];
-  purchased: boolean;
   manual: boolean;
   requiredQuantity: number;
+  sortKey: number;
 }
 
 const normalizeIngredientKey = (value: string): string => (
@@ -30,6 +30,7 @@ const ShoppingList: React.FC<ShoppingListProps> = ({ userId }) => {
   const [loading, setLoading] = useState(true);
   const [newItemName, setNewItemName] = useState('');
   const [notes, setNotes] = useState('');
+  const [draggedGroupKey, setDraggedGroupKey] = useState<string | null>(null);
   const notesRef = useRef<HTMLTextAreaElement | null>(null);
 
   const loadData = async () => {
@@ -76,38 +77,25 @@ const ShoppingList: React.FC<ShoppingListProps> = ({ userId }) => {
           name: formattedName,
           ingredientKey: normalizeIngredientKey(item.ingredient_name),
           ids: [item.id],
-          purchased: item.purchased,
           manual: item.manual,
-          requiredQuantity: qty
+          requiredQuantity: qty,
+          sortKey: item.created_at
         };
       } else {
         groups[key].ids.push(item.id);
-        groups[key].purchased = groups[key].purchased && item.purchased;
         groups[key].requiredQuantity += qty;
+        groups[key].sortKey = Math.min(groups[key].sortKey, item.created_at);
       }
     });
 
     return Object.values(groups).sort((a, b) => {
-      if (a.purchased === b.purchased) {
+      if (a.sortKey === b.sortKey) {
         return a.name.localeCompare(b.name);
       }
-      return a.purchased ? 1 : -1;
+
+      return a.sortKey - b.sortKey;
     });
   }, [rawItems]);
-
-  const togglePurchased = async (group: GroupedItem) => {
-    const newState = !group.purchased;
-
-    setRawItems((prev) => prev.map((item) =>
-      group.ids.includes(item.id)
-        ? { ...item, purchased: newState }
-        : item
-    ));
-
-    await Promise.all(group.ids.map((id) =>
-      mockDb.shoppingItems.update(id, { purchased: newState })
-    ));
-  };
 
   const addItem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -123,13 +111,48 @@ const ShoppingList: React.FC<ShoppingListProps> = ({ userId }) => {
     };
 
     setRawItems((prev) => [
-      { ...newItemBase, id: tempId, created_at: Date.now() },
-      ...prev
+      ...prev,
+      { ...newItemBase, id: tempId, created_at: Date.now() }
     ]);
     setNewItemName('');
 
     await mockDb.shoppingItems.add(newItemBase);
     loadData();
+  };
+
+  const reorderGroups = async (sourceGroup: GroupedItem, targetGroup: GroupedItem) => {
+    if (sourceGroup.name === targetGroup.name && sourceGroup.manual === targetGroup.manual) return;
+
+    const sourceKey = `${sourceGroup.manual ? 'manual' : 'auto'}:${sourceGroup.name}`;
+    const targetKey = `${targetGroup.manual ? 'manual' : 'auto'}:${targetGroup.name}`;
+
+    const sourceIndex = groupedItems.findIndex((item) => `${item.manual ? 'manual' : 'auto'}:${item.name}` === sourceKey);
+    const targetIndex = groupedItems.findIndex((item) => `${item.manual ? 'manual' : 'auto'}:${item.name}` === targetKey);
+
+    if (sourceIndex === -1 || targetIndex === -1 || sourceIndex === targetIndex) return;
+
+    const reorderedGroups = [...groupedItems];
+    const [movedGroup] = reorderedGroups.splice(sourceIndex, 1);
+    reorderedGroups.splice(targetIndex, 0, movedGroup);
+
+    const baseTimestamp = Date.now();
+    const updatePayload = reorderedGroups.flatMap((group, groupIndex) => {
+      const createdAt = baseTimestamp + groupIndex;
+      return group.ids.map((id) => ({ id, createdAt }));
+    });
+
+    setRawItems((prev) => {
+      const createdAtById = new Map(updatePayload.map((entry) => [entry.id, entry.createdAt]));
+      return prev.map((item) => {
+        const nextCreatedAt = createdAtById.get(item.id);
+        if (nextCreatedAt === undefined) return item;
+        return { ...item, created_at: nextCreatedAt };
+      });
+    });
+
+    await Promise.all(
+      updatePayload.map((entry) => mockDb.shoppingItems.update(entry.id, { created_at: entry.createdAt }))
+    );
   };
 
   const deleteItem = async (group: GroupedItem) => {
@@ -151,7 +174,6 @@ const ShoppingList: React.FC<ShoppingListProps> = ({ userId }) => {
 
   if (loading) return <div className="flex justify-center p-8"><Loader2 className="animate-spin text-orange-600" /></div>;
 
-  const purchasedCount = groupedItems.filter((i) => i.purchased).length;
   const totalCount = groupedItems.length;
 
   return (
@@ -160,7 +182,7 @@ const ShoppingList: React.FC<ShoppingListProps> = ({ userId }) => {
         <h2 className="text-xl font-bold flex items-center justify-between">
           Lista de la Compra
           <span className="text-sm font-normal text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
-            {purchasedCount}/{totalCount}
+            {totalCount} elementos
           </span>
         </h2>
       </div>
@@ -192,44 +214,54 @@ const ShoppingList: React.FC<ShoppingListProps> = ({ userId }) => {
             <p className="text-sm">Añade comidas al calendario para generar ingredientes.</p>
           </div>
         ) : (
-          groupedItems.map((item) => (
-            <div
-              key={`${item.manual ? 'manual' : 'auto'}-${item.name}`}
-              className={`group flex items-center p-3 rounded-lg border transition-all duration-200 ${
-                item.purchased
-                  ? 'bg-gray-50 border-gray-100'
-                  : 'bg-white border-gray-200 shadow-sm'
-              }`}
-            >
-              <button
-                onClick={() => togglePurchased(item)}
-                className={`w-6 h-6 rounded-full border-2 mr-3 flex items-center justify-center transition-colors ${
-                  item.purchased
-                    ? 'bg-green-500 border-green-500'
-                    : 'border-gray-300 hover:border-orange-500'
+          groupedItems.map((item) => {
+            const groupKey = `${item.manual ? 'manual' : 'auto'}:${item.name}`;
+
+            return (
+              <div
+                key={groupKey}
+                draggable
+                onDragStart={() => setDraggedGroupKey(groupKey)}
+                onDragEnd={() => setDraggedGroupKey(null)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={async () => {
+                  if (!draggedGroupKey || draggedGroupKey === groupKey) return;
+                  const sourceGroup = groupedItems.find((groupedItem) => `${groupedItem.manual ? 'manual' : 'auto'}:${groupedItem.name}` === draggedGroupKey);
+                  if (!sourceGroup) return;
+                  await reorderGroups(sourceGroup, item);
+                  setDraggedGroupKey(null);
+                }}
+                className={`group flex items-center p-3 rounded-lg border transition-all duration-200 bg-white border-gray-200 shadow-sm ${
+                  draggedGroupKey === groupKey ? 'opacity-40' : ''
                 }`}
               >
-                {item.purchased && <Check size={14} className="text-white" />}
-              </button>
+                <button
+                  type="button"
+                  className="w-6 h-6 mr-3 flex items-center justify-center text-gray-400 cursor-grab active:cursor-grabbing"
+                  aria-label={`Reordenar ${item.name}`}
+                >
+                  <GripHorizontal size={16} />
+                </button>
 
-              <span className={`flex-1 font-medium ${item.purchased ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
-                {item.manual ? item.name : `${item.name} (${item.requiredQuantity})`}
-              </span>
-
-              {item.manual && (
-                <span className="text-[10px] uppercase font-bold text-gray-400 mr-2 border border-gray-200 px-1 rounded">
-                  Manual
+                <span className="flex-1 font-medium text-gray-800">
+                  {item.manual ? item.name : `${item.name} (${item.requiredQuantity})`}
                 </span>
-              )}
 
-              <button
-                onClick={() => deleteItem(item)}
-                className="text-gray-300 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <Trash2 size={16} />
-              </button>
-            </div>
-          ))
+                {item.manual && (
+                  <span className="text-[10px] uppercase font-bold text-gray-400 mr-2 border border-gray-200 px-1 rounded">
+                    Manual
+                  </span>
+                )}
+
+                <button
+                  onClick={() => deleteItem(item)}
+                  className="text-gray-300 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            );
+          })
         )}
       </div>
 
