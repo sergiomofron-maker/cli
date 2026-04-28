@@ -125,6 +125,40 @@ export const mockDb = {
       let all = JSON.parse(localStorage.getItem(MEALS_KEY) || '[]');
       all = all.filter((m: Meal) => m.id !== id);
       localStorage.setItem(MEALS_KEY, JSON.stringify(all));
+    },
+    repeatCurrentWeekIntoNextWeek: async (userId: string, now: Date = new Date()) => {
+      await delay(200);
+
+      const currentWeekStart = startOfWeek(now, { weekStartsOn: 1 });
+      const currentWeekEnd = addDays(currentWeekStart, 6);
+      const nextWeekStart = addWeeks(currentWeekStart, 1);
+      const nextWeekEnd = addDays(nextWeekStart, 6);
+
+      const allMeals = JSON.parse(localStorage.getItem(MEALS_KEY) || '[]') as Meal[];
+      const sourceMeals = allMeals.filter((meal) => {
+        if (meal.user_id !== userId) return false;
+        const mealDate = parseISO(meal.date);
+        return mealDate >= currentWeekStart && mealDate <= currentWeekEnd;
+      });
+
+      const preservedMeals = allMeals.filter((meal) => {
+        if (meal.user_id !== userId) return true;
+        const mealDate = parseISO(meal.date);
+        return mealDate < nextWeekStart || mealDate > nextWeekEnd;
+      });
+
+      const repeatedMeals = sourceMeals.map((meal) => ({
+        ...meal,
+        id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        date: format(addWeeks(parseISO(meal.date), 1), 'yyyy-MM-dd')
+      }));
+
+      localStorage.setItem(MEALS_KEY, JSON.stringify([...preservedMeals, ...repeatedMeals]));
+
+      return {
+        targetWeekKey: format(nextWeekStart, 'yyyy-MM-dd'),
+        mealsInserted: repeatedMeals.length
+      };
     }
   },
   weeklyHistory: {
