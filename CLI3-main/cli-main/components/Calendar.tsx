@@ -4,7 +4,7 @@ import { mockDb } from '../services/mockDb';
 import { syncWeeklyShoppingAndInventory } from '../services/planningSync';
 import { format, addDays, startOfWeek, isSameDay, isSameWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Loader2, Plus, Trash2, CalendarRange, Pencil } from 'lucide-react';
+import { Loader2, Plus, Trash2, CalendarRange, Pencil, RotateCcw } from 'lucide-react';
 
 interface CalendarProps {
   userId: string;
@@ -20,6 +20,7 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
   const [dishName, setDishName] = useState('');
   const [addingMeal, setAddingMeal] = useState(false);
   const [generatingShoppingList, setGeneratingShoppingList] = useState(false);
+  const [repeatingCurrentWeek, setRepeatingCurrentWeek] = useState(false);
   const [editingMealId, setEditingMealId] = useState<string | null>(null);
   const [weekOffset, setWeekOffset] = useState<0 | 1>(0);
 
@@ -96,6 +97,26 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
     }
   };
 
+  const handleRepeatCurrentWeek = async () => {
+    const shouldRepeat = window.confirm('Esto reemplazará la semana siguiente con las comidas de la semana actual. ¿Quieres continuar?');
+    if (!shouldRepeat) return;
+
+    setRepeatingCurrentWeek(true);
+    try {
+      const result = await mockDb.meals.repeatCurrentWeekIntoNextWeek(userId, now);
+      await loadMeals();
+
+      if (result.mealsInserted === 0) {
+        window.alert('No hay comidas en la semana actual para repetir.');
+        return;
+      }
+
+      window.alert('Semana actual copiada en la semana siguiente.');
+    } finally {
+      setRepeatingCurrentWeek(false);
+    }
+  };
+
   const openModal = (date: Date, type: MealType, existingMeal?: Meal) => {
     setSelectedDate(date);
     setModalType(type);
@@ -140,7 +161,19 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
           Semana Siguiente
         </button>
       </div>
-
+      {weekOffset === 0 && (
+        <div className="px-4 mb-3 flex justify-end">
+          <button
+            onClick={handleRepeatCurrentWeek}
+            disabled={repeatingCurrentWeek}
+            className="inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg border border-orange-300 text-orange-700 hover:bg-orange-50 disabled:opacity-60"
+            title="Copiar semana actual en la semana siguiente"
+          >
+            {repeatingCurrentWeek ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+            Repetir semana
+          </button>
+        </div>
+      )}
 
       <div className="space-y-4 px-4">
         {days.map((day) => {
