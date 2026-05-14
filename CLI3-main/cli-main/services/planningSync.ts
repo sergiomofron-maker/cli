@@ -157,19 +157,57 @@ const buildCurrentWeekRequirements = async (userId: string, referenceDate: Date)
   return { requiredCounts, requiredDisplayNames };
 };
 
-const calculateDeficits = async (userId: string, requiredCounts: Record<string, number>) => {
-  const inventoryByNormalized = await getInventoryByIngredientKey(userId);
+const consumeInventoryAndCalculateDeficits = async (
+  userId: string,
+  requiredCounts: Record<string, number>,
+  requiredDisplayNames: Record<string, string>
+) => {
+  const inventoryItems = await mockDb.inventory.list(userId);
+  const inventoryByNormalized: Record<
+    string,
+    { id: string; quantity: number | 'm'; ingredientName: string }
+  > = {};
+
+  inventoryItems.forEach((item) => {
+    const canonical = canonicalizeIngredient(item.ingredient_name);
+    inventoryByNormalized[canonical.key] = {
+      id: item.id,
+      quantity: item.quantity,
+      ingredientName: item.ingredient_name
+    };
+  });
 
   const deficits: Record<string, number> = {};
 
   for (const normalizedIngredient of Object.keys(requiredCounts)) {
     const required = requiredCounts[normalizedIngredient] || 0;
-    const inventoryQuantity = inventoryByNormalized[normalizedIngredient];
+    const inventoryEntry = inventoryByNormalized[normalizedIngredient];
+    const inventoryQuantity = inventoryEntry?.quantity;
 
     const hasInfiniteInventory = inventoryQuantity === 'm';
     const currentInventory = typeof inventoryQuantity === 'number' ? inventoryQuantity : 0;
 
-    const missing = hasInfiniteInventory ? 0 : Math.max(required - currentInventory, 0);
+    if (hasInfiniteInventory) {
+      continue;
+    }
+
+    if (currentInventory > required) {
+      const nextInventory = Number((currentInventory - required).toFixed(2));
+      if (inventoryEntry) {
+        await mockDb.inventory.upsertByName(
+          userId,
+          inventoryEntry.ingredientName || requiredDisplayNames[normalizedIngredient] || normalizedIngredient,
+          nextInventory
+        );
+      }
+      continue;
+    }
+
+    const missing = Number((required - currentInventory).toFixed(2));
+
+    if (inventoryEntry && currentInventory > 0) {
+      await mockDb.inventory.delete(inventoryEntry.id);
+    }
 
     if (missing > 0) {
       deficits[normalizedIngredient] = missing;
@@ -309,7 +347,7 @@ export const syncCurrentWeekShoppingAndInventoryIncremental = async (
   const currentWeekKey = getWeekKey(referenceDate);
 
   const { requiredCounts, requiredDisplayNames } = await buildCurrentWeekRequirements(userId, referenceDate);
-  const deficits = await calculateDeficits(userId, requiredCounts);
+  const deficits = await consumeInventoryAndCalculateDeficits(userId, requiredCounts, requiredDisplayNames);
   const shoppingItems = await mockDb.shoppingItems.list(userId);
   const autoItemIndex = buildAutoItemIndex(shoppingItems);
   const exclusions = await mockDb.shoppingAutoExclusions.listActive(userId, currentWeekKey);
