@@ -141,19 +141,22 @@ export const mockDb = {
         return mealDate >= currentWeekStart && mealDate <= currentWeekEnd;
       });
 
-      const preservedMeals = allMeals.filter((meal) => {
-        if (meal.user_id !== userId) return true;
+      const targetWeekMeals = allMeals.filter((meal) => {
+        if (meal.user_id !== userId) return false;
         const mealDate = parseISO(meal.date);
-        return mealDate < nextWeekStart || mealDate > nextWeekEnd;
+        return mealDate >= nextWeekStart && mealDate <= nextWeekEnd;
       });
 
-      const repeatedMeals = sourceMeals.map((meal) => ({
-        ...meal,
-        id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
-        date: format(addWeeks(parseISO(meal.date), 1), 'yyyy-MM-dd')
-      }));
+      const occupiedSlots = new Set(targetWeekMeals.map((meal) => `${meal.date}__${meal.meal_type}`));
+      const repeatedMeals = sourceMeals
+        .map((meal) => ({
+          ...meal,
+          id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          date: format(addWeeks(parseISO(meal.date), 1), 'yyyy-MM-dd')
+        }))
+        .filter((meal) => !occupiedSlots.has(`${meal.date}__${meal.meal_type}`));
 
-      localStorage.setItem(MEALS_KEY, JSON.stringify([...preservedMeals, ...repeatedMeals]));
+      localStorage.setItem(MEALS_KEY, JSON.stringify([...allMeals, ...repeatedMeals]));
 
       return {
         targetWeekKey: format(nextWeekStart, 'yyyy-MM-dd'),
@@ -288,25 +291,28 @@ export const mockDb = {
       const targetWeekEnd = addDays(targetWeekStart, 6);
 
       const allMeals = JSON.parse(localStorage.getItem(MEALS_KEY) || '[]') as Meal[];
-      const preservedMeals = allMeals.filter((meal) => {
-        if (meal.user_id !== userId) return true;
+      const targetWeekMeals = allMeals.filter((meal) => {
+        if (meal.user_id !== userId) return false;
         const mealDate = parseISO(meal.date);
-        return mealDate < targetWeekStart || mealDate > targetWeekEnd;
+        return mealDate >= targetWeekStart && mealDate <= targetWeekEnd;
       });
 
-      const repeatedMeals: Meal[] = entry.meals.map((snapshot) => {
-        const sourceDate = parseISO(snapshot.date);
-        const shiftedDays = Math.round((sourceDate.getTime() - sourceStart.getTime()) / (1000 * 60 * 60 * 24));
-        return {
-          id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
-          user_id: userId,
-          date: format(addDays(targetWeekStart, shiftedDays), 'yyyy-MM-dd'),
-          meal_type: snapshot.meal_type,
-          dish_name: snapshot.dish_name
-        };
-      });
+      const occupiedSlots = new Set(targetWeekMeals.map((meal) => `${meal.date}__${meal.meal_type}`));
+      const repeatedMeals: Meal[] = entry.meals
+        .map((snapshot) => {
+          const sourceDate = parseISO(snapshot.date);
+          const shiftedDays = Math.round((sourceDate.getTime() - sourceStart.getTime()) / (1000 * 60 * 60 * 24));
+          return {
+            id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+            user_id: userId,
+            date: format(addDays(targetWeekStart, shiftedDays), 'yyyy-MM-dd'),
+            meal_type: snapshot.meal_type,
+            dish_name: snapshot.dish_name
+          };
+        })
+        .filter((meal) => !occupiedSlots.has(`${meal.date}__${meal.meal_type}`));
 
-      localStorage.setItem(MEALS_KEY, JSON.stringify([...preservedMeals, ...repeatedMeals]));
+      localStorage.setItem(MEALS_KEY, JSON.stringify([...allMeals, ...repeatedMeals]));
       return { targetWeekKey, mealsInserted: repeatedMeals.length };
     }
   },
