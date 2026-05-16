@@ -10,6 +10,11 @@ interface CalendarProps {
   userId: string;
 }
 
+
+const TUPPER_SLOTS = ['Tupper 1', 'Tupper 2', 'Tupper 3'] as const;
+type TupperSlotLabel = (typeof TUPPER_SLOTS)[number];
+type TupperStatusByDay = Record<string, Record<TupperSlotLabel, boolean>>;
+
 const Calendar: React.FC<CalendarProps> = ({ userId }) => {
   const [meals, setMeals] = useState<Meal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,7 +28,9 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
   const [repeatingCurrentWeek, setRepeatingCurrentWeek] = useState(false);
   const [editingMealId, setEditingMealId] = useState<string | null>(null);
   const [weekOffset, setWeekOffset] = useState<0 | 1>(0);
+  const [tupperStatusByDay, setTupperStatusByDay] = useState<TupperStatusByDay>({});
 
+  const tupperStorageKey = `calendar-tupper-status-${userId}`;
   const currentWeekStart = useMemo(() => startOfWeek(now, { weekStartsOn: 1 }), [now]);
   const loadMeals = useCallback(async () => {
     setLoading(true);
@@ -44,6 +51,41 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
     return () => window.clearInterval(interval);
   }, []);
 
+
+
+  useEffect(() => {
+    const persisted = window.localStorage.getItem(tupperStorageKey);
+    if (!persisted) return;
+
+    try {
+      const parsed = JSON.parse(persisted) as TupperStatusByDay;
+      setTupperStatusByDay(parsed);
+    } catch {
+      window.localStorage.removeItem(tupperStorageKey);
+    }
+  }, [tupperStorageKey]);
+
+  useEffect(() => {
+    window.localStorage.setItem(tupperStorageKey, JSON.stringify(tupperStatusByDay));
+  }, [tupperStatusByDay, tupperStorageKey]);
+
+  const toggleTupperStatus = (dateStr: string, slot: TupperSlotLabel) => {
+    setTupperStatusByDay((prev) => {
+      const dayStatus = prev[dateStr] ?? {
+        'Tupper 1': false,
+        'Tupper 2': false,
+        'Tupper 3': false,
+      };
+
+      return {
+        ...prev,
+        [dateStr]: {
+          ...dayStatus,
+          [slot]: !dayStatus[slot],
+        },
+      };
+    });
+  };
 
   const viewStartDate = addDays(currentWeekStart, weekOffset * 7);
   const days = Array.from({ length: 7 }, (_, i) => addDays(viewStartDate, i));
@@ -79,13 +121,11 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
   const handleDeleteFromModal = async () => {
     if (!editingMealId) return;
 
-    if (window.confirm('¿Dejar este hueco vacío?')) {
-      setAddingMeal(true);
-      await mockDb.meals.delete(editingMealId);
-      setAddingMeal(false);
-      setIsModalOpen(false);
-      loadMeals();
-    }
+    setAddingMeal(true);
+    await mockDb.meals.delete(editingMealId);
+    setAddingMeal(false);
+    setIsModalOpen(false);
+    loadMeals();
   };
 
   const handleGenerateShoppingList = async () => {
@@ -98,9 +138,6 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
   };
 
   const handleRepeatCurrentWeek = async () => {
-    const shouldRepeat = window.confirm('Esto reemplazará la semana siguiente con las comidas de la semana actual. ¿Quieres continuar?');
-    if (!shouldRepeat) return;
-
     setRepeatingCurrentWeek(true);
     try {
       const result = await mockDb.meals.repeatCurrentWeekIntoNextWeek(userId, now);
@@ -230,6 +267,26 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
                     </button>
                   )}
                 </div>
+
+                {TUPPER_SLOTS.map((slot) => {
+                  const isOccupied = tupperStatusByDay[dateStr]?.[slot] ?? false;
+
+                  return (
+                    <div key={`${dateStr}-${slot}`} className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-semibold text-gray-400 w-16">{slot.toUpperCase()}</span>
+                      <button
+                        onClick={() => toggleTupperStatus(dateStr, slot)}
+                        className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                          isOccupied
+                            ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+                            : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                        }`}
+                      >
+                        {isOccupied ? 'Ocupado' : 'Libre'}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );
