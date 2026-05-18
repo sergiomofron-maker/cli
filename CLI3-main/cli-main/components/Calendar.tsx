@@ -268,25 +268,26 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
                   )}
                 </div>
 
-                {TUPPER_SLOTS.map((slot) => {
-                  const isOccupied = tupperStatusByDay[dateStr]?.[slot] ?? false;
+                {weekOffset === 0 &&
+                  TUPPER_SLOTS.map((slot) => {
+                    const isOccupied = tupperStatusByDay[dateStr]?.[slot] ?? false;
 
-                  return (
-                    <div key={`${dateStr}-${slot}`} className="flex items-center justify-between gap-3">
-                      <span className="text-xs font-semibold text-gray-400 w-16">{slot.toUpperCase()}</span>
-                      <button
-                        onClick={() => toggleTupperStatus(dateStr, slot)}
-                        className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                          isOccupied
-                            ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
-                            : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
-                        }`}
-                      >
-                        {isOccupied ? 'Ocupado' : 'Libre'}
-                      </button>
-                    </div>
-                  );
-                })}
+                    return (
+                      <div key={`${dateStr}-${slot}`} className="flex items-center justify-between gap-3">
+                        <span className="text-xs font-semibold text-gray-400 w-16">{slot.toUpperCase()}</span>
+                        <button
+                          onClick={() => toggleTupperStatus(dateStr, slot)}
+                          className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                            isOccupied
+                              ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+                              : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                          }`}
+                        >
+                          {isOccupied ? 'Ocupado' : 'Libre'}
+                        </button>
+                      </div>
+                    );
+                  })}
               </div>
             </div>
           );
