@@ -4,16 +4,14 @@ import { mockDb } from '../services/mockDb';
 import { syncWeeklyShoppingAndInventory } from '../services/planningSync';
 import { format, addDays, startOfWeek, isSameDay, isSameWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Loader2, Plus, Trash2, CalendarRange, Pencil, RotateCcw } from 'lucide-react';
+import { Loader2, Plus, Trash2, CalendarRange, RotateCcw, Check, X } from 'lucide-react';
 
 interface CalendarProps {
   userId: string;
 }
 
 
-const TUPPER_SLOTS = ['Tupper 1', 'Tupper 2', 'Tupper 3'] as const;
-type TupperSlotLabel = (typeof TUPPER_SLOTS)[number];
-type TupperStatusByDay = Record<string, Record<TupperSlotLabel, boolean>>;
+type MealStatusByDay = Record<string, Record<MealType, boolean>>;
 
 const Calendar: React.FC<CalendarProps> = ({ userId }) => {
   const [meals, setMeals] = useState<Meal[]>([]);
@@ -28,9 +26,9 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
   const [repeatingCurrentWeek, setRepeatingCurrentWeek] = useState(false);
   const [editingMealId, setEditingMealId] = useState<string | null>(null);
   const [weekOffset, setWeekOffset] = useState<0 | 1>(0);
-  const [tupperStatusByDay, setTupperStatusByDay] = useState<TupperStatusByDay>({});
+  const [mealStatusByDay, setMealStatusByDay] = useState<MealStatusByDay>({});
 
-  const tupperStorageKey = `calendar-tupper-status-${userId}`;
+  const mealStatusStorageKey = `calendar-meal-status-${userId}`;
   const currentWeekStart = useMemo(() => startOfWeek(now, { weekStartsOn: 1 }), [now]);
   const loadMeals = useCallback(async () => {
     setLoading(true);
@@ -54,34 +52,33 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
 
 
   useEffect(() => {
-    const persisted = window.localStorage.getItem(tupperStorageKey);
+    const persisted = window.localStorage.getItem(mealStatusStorageKey);
     if (!persisted) return;
 
     try {
-      const parsed = JSON.parse(persisted) as TupperStatusByDay;
-      setTupperStatusByDay(parsed);
+      const parsed = JSON.parse(persisted) as MealStatusByDay;
+      setMealStatusByDay(parsed);
     } catch {
-      window.localStorage.removeItem(tupperStorageKey);
+      window.localStorage.removeItem(mealStatusStorageKey);
     }
-  }, [tupperStorageKey]);
+  }, [mealStatusStorageKey]);
 
   useEffect(() => {
-    window.localStorage.setItem(tupperStorageKey, JSON.stringify(tupperStatusByDay));
-  }, [tupperStatusByDay, tupperStorageKey]);
+    window.localStorage.setItem(mealStatusStorageKey, JSON.stringify(mealStatusByDay));
+  }, [mealStatusByDay, mealStatusStorageKey]);
 
-  const toggleTupperStatus = (dateStr: string, slot: TupperSlotLabel) => {
-    setTupperStatusByDay((prev) => {
+  const toggleMealStatus = (dateStr: string, mealType: MealType) => {
+    setMealStatusByDay((prev) => {
       const dayStatus = prev[dateStr] ?? {
-        'Tupper 1': false,
-        'Tupper 2': false,
-        'Tupper 3': false,
+        [MealType.LUNCH]: false,
+        [MealType.DINNER]: false,
       };
 
       return {
         ...prev,
         [dateStr]: {
           ...dayStatus,
-          [slot]: !dayStatus[slot],
+          [mealType]: !dayStatus[mealType],
         },
       };
     });
@@ -236,7 +233,21 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
                       className="flex-1 min-w-0 flex items-start justify-between gap-2 bg-orange-50 px-3 py-2 rounded-lg border border-orange-100 cursor-pointer active:scale-[0.98] transition-transform"
                     >
                       <span className="text-sm text-gray-800 font-medium whitespace-normal break-words leading-snug">{lunch.dish_name}</span>
-                      <Pencil size={14} className="text-orange-300" />
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          toggleMealStatus(dateStr, MealType.LUNCH);
+                        }}
+                        className={`h-[22px] w-[22px] rounded-md border flex items-center justify-center transition-colors ${
+                          (mealStatusByDay[dateStr]?.[MealType.LUNCH] ?? false)
+                            ? 'bg-green-50 border-green-200 text-green-600 hover:bg-green-100'
+                            : 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100'
+                        }`}
+                        aria-label="Cambiar estado comida"
+                      >
+                        {(mealStatusByDay[dateStr]?.[MealType.LUNCH] ?? false) ? <Check size={14} /> : <X size={14} />}
+                      </button>
                     </div>
                   ) : (
                     <button
@@ -256,7 +267,21 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
                       className="flex-1 min-w-0 flex items-start justify-between gap-2 bg-orange-50 px-3 py-2 rounded-lg border border-orange-100 cursor-pointer active:scale-[0.98] transition-transform"
                     >
                       <span className="text-sm text-gray-800 font-medium whitespace-normal break-words leading-snug">{dinner.dish_name}</span>
-                      <Pencil size={14} className="text-orange-300" />
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          toggleMealStatus(dateStr, MealType.DINNER);
+                        }}
+                        className={`h-[22px] w-[22px] rounded-md border flex items-center justify-center transition-colors ${
+                          (mealStatusByDay[dateStr]?.[MealType.DINNER] ?? false)
+                            ? 'bg-green-50 border-green-200 text-green-600 hover:bg-green-100'
+                            : 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100'
+                        }`}
+                        aria-label="Cambiar estado cena"
+                      >
+                        {(mealStatusByDay[dateStr]?.[MealType.DINNER] ?? false) ? <Check size={14} /> : <X size={14} />}
+                      </button>
                     </div>
                   ) : (
                     <button
@@ -268,26 +293,6 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
                   )}
                 </div>
 
-                {weekOffset === 0 &&
-                  TUPPER_SLOTS.map((slot) => {
-                    const isOccupied = tupperStatusByDay[dateStr]?.[slot] ?? false;
-
-                    return (
-                      <div key={`${dateStr}-${slot}`} className="flex items-center justify-between gap-3">
-                        <span className="text-xs font-semibold text-gray-400 w-16">{slot.toUpperCase()}</span>
-                        <button
-                          onClick={() => toggleTupperStatus(dateStr, slot)}
-                          className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                            isOccupied
-                              ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
-                              : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
-                          }`}
-                        >
-                          {isOccupied ? 'Ocupado' : 'Libre'}
-                        </button>
-                      </div>
-                    );
-                  })}
               </div>
             </div>
           );
