@@ -11,6 +11,7 @@ const INVENTORY_SYNC_KEY = 'planifia_inventory_sync';
 const SHOPPING_AUTO_EXCLUSIONS_KEY = 'planifia_shopping_auto_exclusions';
 const WEEK_HISTORY_KEY = 'planifia_week_history';
 const WEEK_HISTORY_META_KEY = 'planifia_week_history_meta';
+const MEAL_STATUS_KEY = 'planifia_meal_status';
 
 // Mock delay to simulate network
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -22,6 +23,9 @@ interface InventorySyncState {
 
 type WeeklyHistoryStore = Record<string, WeeklyHistoryEntry[]>;
 type WeeklyHistoryMetaStore = Record<string, { last_processed_week_key: string }>;
+
+
+type MealStatusStore = Record<string, Record<string, Partial<Record<MealType, boolean>>>>;
 
 const getWeekStartKey = (date: Date): string => format(startOfWeek(date, { weekStartsOn: 1 }), 'yyyy-MM-dd');
 
@@ -86,6 +90,22 @@ export const mockDb = {
     getUser: () => {
       const stored = localStorage.getItem(USER_KEY);
       return stored ? JSON.parse(stored) as User : null;
+    }
+  },
+  mealStatus: {
+    getByWeekKey: async (userId: string, weekKey: string) => {
+      await delay(50);
+      const all = JSON.parse(localStorage.getItem(MEAL_STATUS_KEY) || '{}') as MealStatusStore;
+      return all[userId]?.[weekKey] || {};
+    },
+    updateByWeekKey: async (userId: string, weekKey: string, statuses: Record<string, Partial<Record<MealType, boolean>>>) => {
+      await delay(50);
+      const all = JSON.parse(localStorage.getItem(MEAL_STATUS_KEY) || '{}') as MealStatusStore;
+      const userStatuses = all[userId] || {};
+      userStatuses[weekKey] = statuses;
+      all[userId] = userStatuses;
+      localStorage.setItem(MEAL_STATUS_KEY, JSON.stringify(all));
+      return statuses;
     }
   },
   meals: {

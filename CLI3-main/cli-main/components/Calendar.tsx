@@ -28,7 +28,6 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
   const [weekOffset, setWeekOffset] = useState<0 | 1>(0);
   const [mealStatusByDay, setMealStatusByDay] = useState<MealStatusByDay>({});
 
-  const mealStatusStorageKey = `calendar-meal-status-${userId}`;
   const currentWeekStart = useMemo(() => startOfWeek(now, { weekStartsOn: 1 }), [now]);
   const loadMeals = useCallback(async () => {
     setLoading(true);
@@ -52,36 +51,28 @@ const Calendar: React.FC<CalendarProps> = ({ userId }) => {
 
 
   useEffect(() => {
-    const persisted = window.localStorage.getItem(mealStatusStorageKey);
-    if (!persisted) return;
+    const loadMealStatuses = async () => {
+      const weekKey = format(currentWeekStart, 'yyyy-MM-dd');
+      const statuses = await mockDb.mealStatus.getByWeekKey(userId, weekKey);
+      setMealStatusByDay(statuses);
+    };
 
-    try {
-      const parsed = JSON.parse(persisted) as MealStatusByDay;
-      setMealStatusByDay(parsed);
-    } catch {
-      window.localStorage.removeItem(mealStatusStorageKey);
-    }
-  }, [mealStatusStorageKey]);
+    void loadMealStatuses();
+  }, [currentWeekStart, userId]);
 
-  useEffect(() => {
-    window.localStorage.setItem(mealStatusStorageKey, JSON.stringify(mealStatusByDay));
-  }, [mealStatusByDay, mealStatusStorageKey]);
+  const toggleMealStatus = async (dateStr: string, mealType: MealType) => {
+    const nextStatuses: MealStatusByDay = {
+      ...mealStatusByDay,
+      [dateStr]: {
+        [MealType.LUNCH]: mealStatusByDay[dateStr]?.[MealType.LUNCH] ?? false,
+        [MealType.DINNER]: mealStatusByDay[dateStr]?.[MealType.DINNER] ?? false,
+        [mealType]: !(mealStatusByDay[dateStr]?.[mealType] ?? false),
+      },
+    };
 
-  const toggleMealStatus = (dateStr: string, mealType: MealType) => {
-    setMealStatusByDay((prev) => {
-      const dayStatus = prev[dateStr] ?? {
-        [MealType.LUNCH]: false,
-        [MealType.DINNER]: false,
-      };
-
-      return {
-        ...prev,
-        [dateStr]: {
-          ...dayStatus,
-          [mealType]: !dayStatus[mealType],
-        },
-      };
-    });
+    setMealStatusByDay(nextStatuses);
+    const weekKey = format(currentWeekStart, 'yyyy-MM-dd');
+    await mockDb.mealStatus.updateByWeekKey(userId, weekKey, nextStatuses);
   };
 
   const viewStartDate = addDays(currentWeekStart, weekOffset * 7);
